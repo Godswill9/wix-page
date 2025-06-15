@@ -5,7 +5,7 @@ const gocardless = require('gocardless-nodejs');
 
 
 const client = gocardless(
-  process.env.GC_ACCESS_TOKEN,
+  process.env.GOCARDLESS_ACCESS_TOKEN,
   { environment: 'sandbox' }
 );
 
@@ -44,17 +44,17 @@ router.post('/gocardless', async (req, res) => {
 
   try {
     const redirectFlow = await client.redirectFlows.create({
-      params: {
-        description: 'Set up Direct Debit for payment',
-        session_token,
-        success_redirect_url: 'https://yourdomain.com/gocardless/success',
-        prefilled_customer: {
-          given_name: firstName,
-          family_name: lastName,
-          email
-        }
-      }
-    });
+  description: 'Set up Direct Debit for payment',
+  session_token,
+  success_redirect_url: 'https://my-gocardless-pages.onrender.com/loading.html',
+  // success_redirect_url: 'https://yourdomain.com/gocardless/success',
+  prefilled_customer: {
+    given_name: firstName,
+    family_name: lastName,
+    email
+  }
+});
+
 
     // You MUST save `session_token` and `redirectFlow.id` to verify later on success
     // For now, we return them as part of response
@@ -70,31 +70,23 @@ router.post('/gocardless', async (req, res) => {
 });
 
 router.get('/gocardless/success', async (req, res) => {
-  const { redirect_flow_id } = req.query;
-    const {sess_tok} = req.body;
+  const { redirect_flow_id, session_token } = req.query;
 
-
-  if (!redirect_flow_id) {
-    return res.status(400).json({ error: 'Missing redirect_flow_id' });
+  if (!redirect_flow_id || !session_token) {
+    return res.status(400).json({ error: 'Missing redirect_flow_id or session_token' });
   }
 
   try {
     // Complete the redirect flow
     const result = await client.redirectFlows.complete(redirect_flow_id, {
       data: {
-        session_token: sess_tok // Must match what you used when creating the redirect flow
+        session_token: session_token
       }
     });
 
     const customer = result.redirect_flows.customer;
     const mandate = result.redirect_flows.mandate;
 
-    // 🔐 You can now save the customer ID and mandate ID to your database
-    // and use the mandate to create payments
-
-    // Optional: redirect to a success page or return JSON
-    // res.redirect(`/payment-success?customer_id=${customer}&mandate_id=${mandate}`);
-    // // OR
     res.json({ customer, mandate });
 
   } catch (err) {
@@ -104,5 +96,29 @@ router.get('/gocardless/success', async (req, res) => {
 });
 
 
+router.post('/go_payments/create', async (req, res) => {
+  const { mandate_id, amount, currency, description } = req.body;
+
+  if (!mandate_id || !amount || !currency || !description) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+
+  try {
+    const payment = await client.payments.create({
+      params: {
+        amount: Number(amount), // in pence (e.g., 1500 = £15.00)
+        currency: currency,
+        mandate: mandate_id,
+        description: description,
+      }
+    });
+
+    res.json({ success: true, payment_id: payment.id, payment });
+
+  } catch (err) {
+    console.error('Payment creation failed:', err?.body || err.message);
+    res.status(500).json({ error: 'Payment creation failed' });
+  }
+});
 
 module.exports = router;
