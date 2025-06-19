@@ -73,6 +73,49 @@ router.post('/gocardless', async (req, res) => {
   }
 });
 
+
+router.post('/paymentCompleted', async (req, res) => {
+  const { paymentId, name, email, amount, method } = req.body;
+
+  console.log("Payment completed:", req.body);
+
+  const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: "guche9@gmail.com",
+      pass: "vfoyifdoahaggsms",  // Secure this properly!
+    },
+  });
+
+  const emailBody = `
+    <body style="font-family: Arial, sans-serif; background: #f7f7f7; padding: 20px;">
+      <div style="background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+        <h2 style="color:#1e3a8a;">New Payment Received</h2>
+        <p><strong>Name:</strong> ${name}</p>
+        <p><strong>Email:</strong> ${email}</p>
+        <p><strong>Amount:</strong> $${amount} USD</p>
+        <p><strong>Payment Platform:</strong> ${method}</p>
+        <p><strong>Payment ID:</strong> ${paymentId}</p>
+      </div>
+    </body>
+  `;
+
+  try {
+    await transporter.sendMail({
+      from: `"Transvanta" <${ADMIN_EMAIL}>`,
+      to: ADMIN_EMAIL,
+      subject: "Payment Completed - Transvanta",
+      html: emailBody
+    });
+
+    res.json({ message: "Admin notified successfully" });
+  } catch (err) {
+    console.error("Error sending email:", err);
+    res.status(500).json({ error: "Failed to notify admin" });
+  }
+});
+
+
 // Send email to both admin and customer
 async function sendPaymentEmail(customerEmail, amount, method, paymentLink) {
   const transporter = nodemailer.createTransport({
