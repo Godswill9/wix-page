@@ -4,19 +4,16 @@ const axios = require('axios');
 const gocardless = require('gocardless-nodejs');
 const nodemailer = require('nodemailer');
 
-const client = gocardless(
-  process.env.GOCARDLESS_ACCESS_TOKEN,
-  { environment: 'sandbox' }
-);
+// Setup GoCardless client
+const client = gocardless(process.env.GOCARDLESS_ACCESS_TOKEN, { environment: 'sandbox' });
 
+// Constants
 const ADMIN_EMAIL = "guche9@gmail.com";
-const EXCHANGE_RATE = 1500;  // Example: 1 USD = 1500 NGN (update accordingly)
+const EXCHANGE_RATE = 1500;  // Example: 1 USD = 1500 NGN
 
 // Paystack for Nigeria (convert dollars to naira)
 router.post('/paystack', async (req, res) => {
   const { email, amount } = req.body;
-
-  // Convert amount from dollars to naira
   const amountInNaira = amount * EXCHANGE_RATE;
 
   try {
@@ -24,7 +21,7 @@ router.post('/paystack', async (req, res) => {
       'https://api.paystack.co/transaction/initialize',
       {
         email,
-        amount: Math.round(amountInNaira * 100), // Paystack expects amount in kobo
+        amount: Math.round(amountInNaira * 100),
         currency: 'NGN'
       },
       {
@@ -35,7 +32,8 @@ router.post('/paystack', async (req, res) => {
       }
     );
 
-    await sendPaymentEmail(email, amount, 'Paystack');
+    const paymentLink = response.data.data.authorization_url;
+    await sendPaymentEmail(email, amount, 'Paystack', paymentLink);
     res.json(response.data);
   } catch (error) {
     console.error(error.response?.data || error.message);
@@ -43,10 +41,9 @@ router.post('/paystack', async (req, res) => {
   }
 });
 
-// GoCardless for UK (no conversion, stay in dollars)
+// GoCardless for UK (no conversion)
 router.post('/gocardless', async (req, res) => {
   const { name, email, sess_tok, amount } = req.body;
-
   const [firstName, ...rest] = name.trim().split(' ');
   const lastName = rest.join(' ') || 'Unknown';
   const session_token = sess_tok;
@@ -63,9 +60,10 @@ router.post('/gocardless', async (req, res) => {
       }
     });
 
-    await sendPaymentEmail(email, amount, 'GoCardless');
+    const paymentLink = redirectFlow.redirect_url;
+    await sendPaymentEmail(email, amount, 'GoCardless', paymentLink);
     res.json({
-      redirect_url: redirectFlow.redirect_url,
+      redirect_url: paymentLink,
       redirect_flow_id: redirectFlow.id,
       session_token
     });
@@ -75,53 +73,74 @@ router.post('/gocardless', async (req, res) => {
   }
 });
 
-// Send email to both admin and customer after payment link creation
-async function sendPaymentEmail(customerEmail, amount, method) {
+// Send email to both admin and customer
+async function sendPaymentEmail(customerEmail, amount, method, paymentLink) {
   const transporter = nodemailer.createTransport({
     service: "gmail",
     auth: {
       user: "guche9@gmail.com",
-      pass: "vfoyifdoahaggsms", // NEVER hardcode, store securely!
+      pass: "vfoyifdoahaggsms", // Securely store this in env file!
     },
   });
 
-  const emailBody = `
-    <body style="font-family: Arial, sans-serif;">
-      <h2>Payment Link Generated</h2>
-      <p><strong>Payment Platform:</strong> ${method}</p>
-      <p><strong>Amount:</strong> $${amount} USD</p>
-      <p><strong>Customer Email:</strong> ${customerEmail}</p>
-    </body>
-  `;
-
-  const mailOptionsCustomer = {
-    from: `"Transvanta" <${ADMIN_EMAIL}>`,
-    to: customerEmail,
-    subject: "Payment Link Created - Transvanta",
-    html: `
-      <body style="font-family: Arial, sans-serif;">
-        <h2>Hello,</h2>
-        <p>Your payment link has been successfully created.</p>
-        <p>Amount: $${amount} USD</p>
-        <p>Payment Platform: ${method}</p>
-        <p>Thank you for choosing Transvanta!</p>
-      </body>
-    `
-  };
-
-  const mailOptionsAdmin = {
-    from: `"Transvanta" <${ADMIN_EMAIL}>`,
-    to: ADMIN_EMAIL,
-    subject: "Payment Link Generated (Admin Notification)",
-    html: emailBody
-  };
+  const emailTemplate = (recipientType) => `
+  <body style="margin:0; padding:0; font-family: 'Arial', sans-serif; background-color:#f6f9fc;">
+    <table width="100%" cellspacing="0" cellpadding="0">
+      <tr>
+        <td align="center" style="padding: 40px 0;">
+          <table width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.1);">
+            <tr>
+              <td style="background: #1e3a8a; padding: 30px; text-align:center; color:white; border-top-left-radius:8px; border-top-right-radius:8px;">
+                <h1>Transvanta</h1>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 30px;">
+                <h2 style="color:#333;">${recipientType === 'customer' ? 'Your Payment Link is Ready' : 'New Payment Link Created'}</h2>
+                <p style="font-size:16px; color:#555;">
+                  ${recipientType === 'customer'
+                    ? `Dear Customer, your payment link has been generated. Please proceed to complete your payment.`
+                    : `A new payment link has been generated by admin.`}
+                </p>
+                <p><strong>Amount:</strong> $${amount} USD</p>
+                <p><strong>Platform:</strong> ${method}</p>
+                <div style="margin: 20px 0;">
+                  <a href="${paymentLink}" target="_blank" 
+                    style="display:inline-block; padding: 12px 20px; background:#1e3a8a; color:white; text-decoration:none; border-radius:4px;">
+                    Pay Now
+                  </a>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td style="background:#f1f1f1; padding:20px; text-align:center; color:#888; font-size:12px;">
+                &copy; ${new Date().getFullYear()} Transvanta. All rights reserved.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>`;
 
   try {
-    await transporter.sendMail(mailOptionsCustomer);
-    await transporter.sendMail(mailOptionsAdmin);
-    console.log("Payment email sent to customer and admin.");
+    await transporter.sendMail({
+      from: `"Transvanta" <${ADMIN_EMAIL}>`,
+      to: customerEmail,
+      subject: "Your Payment Link - Transvanta",
+      html: emailTemplate('customer')
+    });
+
+    await transporter.sendMail({
+      from: `"Transvanta" <${ADMIN_EMAIL}>`,
+      to: ADMIN_EMAIL,
+      subject: "New Payment Link Created (Admin Notification)",
+      html: emailTemplate('admin')
+    });
+
+    console.log("Emails successfully sent to both customer and admin.");
   } catch (err) {
-    console.error("Error sending payment emails:", err);
+    console.error("Error sending emails:", err);
   }
 }
 
