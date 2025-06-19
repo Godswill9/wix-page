@@ -80,8 +80,8 @@ async function sendPaymentEmail(customerEmail, amount, method) {
   const transporter = nodemailer.createTransport({
     service: "gmail",
     auth: {
-      user: ADMIN_EMAIL,
-      pass: process.env.EMAIL_APP_PASSWORD, // NEVER hardcode, store securely!
+      user: "guche9@gmail.com",
+      pass: "vfoyifdoahaggsms", // NEVER hardcode, store securely!
     },
   });
 
