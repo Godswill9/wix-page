@@ -6,7 +6,7 @@ const express = require('express');
 const axios = require('axios');// or native fetch in newer Node versions
 const router = express.Router();
 const multer = require('multer'); // For handling file uploads
-
+const nodemailer = require("nodemailer")
 const airtableBaseId = process.env.AIRTABLE_BASE_ID ;
 const airtableToken = process.env.AIRTABLE_API_KEY
 const upload = multer({ storage: multer.memoryStorage() }); // keep file in memory
@@ -84,8 +84,9 @@ const quantityNumber = Number(quantity)
       if (!response.data.records?.length) {
         return res.status(500).json({ error: "Shipping record failed." });
       }
+await sendBookingConfirmation(fullName, email);
+return res.json({ message: "Shipping request submitted!" });
 
-      return res.json({ message: "Shipping request submitted!" });
     }
 
     if (type === 'Purchase') {
@@ -147,7 +148,7 @@ const quantityNumber = Number(quantity)
       if (!purchaseResponse.data.records?.length) {
         return res.status(500).json({ error: "Purchase record failed." });
       }
-
+await sendBookingConfirmation(fullName, email);
       return res.json({ message: "Purchase request submitted!" });
     }
 
@@ -159,33 +160,60 @@ const quantityNumber = Number(quantity)
   }
 });
 
-// GET /api/bookings
-router.get('/bookings', async (req, res) => {
-  try {
-    const response = await axios.get(
-      `https://api.airtable.com/v0/${airtableBaseId}/tbllEI3IPKLAqGV5G`,
-      {
-        headers: {
-          Authorization: `Bearer ${airtableToken}`,
-          'Content-Type': 'application/json',
-        },
-        params: {
-          // Optional: you can add filters or sorting here
-          // view: 'Grid view' 
-        }
-      }
-    );
-
-    const records = response.data.records.map(record => ({
-      id: record.id,
-      ...record.fields
-    }));
-
-    res.json({ bookings: records });
-  } catch (err) {
-    console.error("Error fetching bookings from Airtable:", err.response?.data || err.message);
-    res.status(500).json({ error: "Failed to fetch bookings." });
-  }
-});
-
 module.exports = router;
+
+// AFTER successful Airtable booking creation, send booking confirmation email
+
+async function sendBookingConfirmation(fullName, email) {
+  const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: "guche9@gmail.com",
+      pass: "vfoyifdoahaggsms",
+    },
+  });
+
+  const mailOptions = {
+    from: '"Transvanta" <guche9@gmail.com>',
+    to: email,
+    subject: "Booking Received - Transvanta",
+    html: `
+      <body style="margin:0; padding:0; font-family:'Helvetica Neue',Arial,sans-serif; background-color:#f0f0f0;">
+        <table role="presentation" border="0" cellspacing="0" cellpadding="0" width="100%" style="max-width:600px; margin:40px auto; background:#ffffff; border-radius:12px; box-shadow:0 4px 12px rgba(0,0,0,0.1); overflow:hidden;">
+          <tr>
+            <td style="background: rgba(30, 58, 138, 0.95); padding:30px; text-align:center;">
+              <img src="https://my-gocardless-pages.onrender.com/IMG-20250616-WA0010.jpg" alt="Transvanta Logo" style="max-height:80px; margin-bottom:20px;">
+              <h1 style="color:#ffffff; margin:0; font-size:24px;">Booking Acknowledged</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:30px; text-align:center;">
+              <h2 style="color:#1f2937;">Hello ${fullName},</h2>
+              <p style="color:#4b5563; font-size:16px; line-height:1.6;">
+                We have successfully received your booking request.
+              </p>
+              <p style="color:#4b5563; font-size:16px; line-height:1.6;">
+                Our team is currently reviewing your request, and we will be sending you a detailed quote for pricing shortly.
+              </p>
+              <p style="color:#4b5563; font-size:16px; line-height:1.6;">
+                Thank you for choosing <strong>Transvanta</strong> — We look forward to serving you.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color:#f9fafb; padding:20px; text-align:center; font-size:12px; color:#9ca3af;">
+              &copy; ${new Date().getFullYear()} Transvanta. All rights reserved.
+            </td>
+          </tr>
+        </table>
+      </body>
+    `
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log("Booking confirmation email sent to:", email);
+  } catch (err) {
+    console.error("Error sending booking confirmation email:", err);
+  }
+}

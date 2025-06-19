@@ -9,6 +9,9 @@ const server = http.createServer(app);
 const payments = require("./routes/payments");
 const bookings = require("./routes/bookings");
 
+const paymentsEmails = require("./routes/sendPaymentEmail");
+const bookingsEmails = require("./routes/sendEmailBookings");
+
 app.use(express.static('build'));
 app.use(
   cors({
@@ -34,10 +37,13 @@ app.get("/", (req, res) => {
 app.use("/api/payments", payments);
 app.use("/api/bookings", bookings);
 
+app.use("/api/bookingsTR", bookingsEmails);
+app.use("/api/paymentsTR", paymentsEmails);
+
 
 
 // Set the port to listen on
-const port = process.env.PORT || 8092;
+const port = process.env.PORT || 8013;
 console.log(new Date());
 
 // Start the server with WebSocket
